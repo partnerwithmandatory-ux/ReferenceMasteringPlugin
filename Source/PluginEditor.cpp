@@ -19,7 +19,11 @@ ReferenceMasterEditor::ReferenceMasterEditor(ReferenceMasterProcessor& processor
             s->setSliderStyle(juce::Slider::LinearHorizontal); s->setTextBoxStyle(juce::Slider::TextBoxRight,false,90,24);
             panel->addAndMakeVisible(*s); panel->addAndMakeVisible(*l);
             auto* slider=s.get(); auto* parameter=p.state.getParameter(id);
-            slider->setNormalisableRange(parameter->getNormalisableRange());
+            const auto& range=parameter->getNormalisableRange();
+            slider->setNormalisableRange(juce::NormalisableRange<double>(
+                static_cast<double>(range.start), static_cast<double>(range.end),
+                static_cast<double>(range.interval), static_cast<double>(range.skew),
+                range.symmetricSkew));
             auto attachment=std::make_unique<juce::ParameterAttachment>(*parameter,
                 [slider](float value){ slider->setValue(value,juce::dontSendNotification); });
             attachment->sendInitialUpdate();
