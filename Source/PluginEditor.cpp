@@ -1,10 +1,11 @@
 #include "PluginEditor.h"
 ReferenceMasterEditor::ReferenceMasterEditor(ReferenceMasterProcessor& processor):AudioProcessorEditor(processor),p(processor)
 {
+    p.recordEdit();
     setSize(920,620);
     title.setText("REFERENCE MASTER / Prototype",juce::dontSendNotification);
     title.setFont(juce::Font(24.f));
-    juce::Component* controls[]{&title,&meters,&report,&load,&apply,&save,&restore,&tabs};
+    juce::Component* controls[]{&title,&meters,&report,&load,&apply,&save,&restore,&undo,&redo,&tabs};
     for(auto* c:controls) addAndMakeVisible(c);
     report.setText("Load a supported reference audio file (including MP3 on macOS). No AI source separation is included yet.",juce::dontSendNotification);
     juce::StringArray names{"Width & Depth","EQ","Compression","Maximizer"};
@@ -17,19 +18,33 @@ ReferenceMasterEditor::ReferenceMasterEditor(ReferenceMasterProcessor& processor
             l->setBounds(20,20+row*66,180,26); s->setBounds(200,20+row*66,630,40);
             s->setSliderStyle(juce::Slider::LinearHorizontal); s->setTextBoxStyle(juce::Slider::TextBoxRight,false,90,24);
             panel->addAndMakeVisible(*s); panel->addAndMakeVisible(*l);
-            attachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(p.state,id,*s));
+            auto* slider=s.get(); auto* parameter=p.state.getParameter(id);
+            slider->setNormalisableRange(parameter->getNormalisableRange());
+            auto attachment=std::make_unique<juce::ParameterAttachment>(*parameter,
+                [slider](float value){ slider->setValue(value,juce::dontSendNotification); });
+            attachment->sendInitialUpdate();
+            auto dragging=std::make_shared<bool>(false);
+            slider->onDragStart=[this,parameter,dragging]{p.recordEdit();*dragging=true;parameter->beginChangeGesture();};
+            slider->onValueChange=[this,parameter,slider,dragging]{
+                if(!*dragging){p.recordEdit();parameter->beginChangeGesture();}
+                parameter->setValueNotifyingHost(parameter->convertTo0to1(static_cast<float>(slider->getValue())));
+                if(!*dragging){parameter->endChangeGesture();p.recordEdit();}
+            };
+            slider->onDragEnd=[this,parameter,dragging]{parameter->endChangeGesture();*dragging=false;p.recordEdit();};
+            attachments.push_back(std::move(attachment));
             sliders.push_back(std::move(s)); labels.push_back(std::move(l)); ++row;
         }
         tabs.addTab(names[int(page)],juce::Colour(0xff192731),panel.get(),false); pages.push_back(std::move(panel));
     }
     load.onClick=[this]{chooseReference();}; save.onClick=[this]{preset(true);}; restore.onClick=[this]{preset(false);};
-    apply.onClick=[this]{if(valid.load() && p.inputRms.load()>-70) {auto* param=p.state.getParameter("gain");param->beginChangeGesture();param->setValueNotifyingHost(param->convertTo0to1(juce::jlimit(-12.f,12.f,target.load()-p.inputRms.load())));param->endChangeGesture();}};
+    undo.onClick=[this]{p.undoEdit();}; redo.onClick=[this]{p.redoEdit();};
+    apply.onClick=[this]{if(valid.load() && p.inputRms.load()>-70) {p.recordEdit();auto* param=p.state.getParameter("gain");param->beginChangeGesture();param->setValueNotifyingHost(param->convertTo0to1(juce::jlimit(-12.f,12.f,target.load()-p.inputRms.load())));param->endChangeGesture();p.recordEdit();}};
     startTimerHz(10);
 }
 ReferenceMasterEditor::~ReferenceMasterEditor(){stopTimer();workers.removeAllJobs(true,-1);}
 void ReferenceMasterEditor::paint(juce::Graphics& g){g.fillAll(juce::Colour(0xff0d171f));}
-void ReferenceMasterEditor::resized(){title.setBounds(24,15,870,40);meters.setBounds(24,60,870,30);load.setBounds(24,105,150,34);apply.setBounds(190,105,150,34);save.setBounds(590,105,140,34);restore.setBounds(745,105,150,34);report.setBounds(24,150,870,100);tabs.setBounds(24,260,getWidth()-48,getHeight()-280);}
-void ReferenceMasterEditor::timerCallback(){meters.setText("Input RMS "+juce::String(p.inputRms.load(),1)+" dBFS | Sample peak "+juce::String(p.inputPeak.load(),1)+" dBFS | Side energy "+juce::String(p.inputSide.load()*100,1)+"%",juce::dontSendNotification);{const juce::ScopedLock guard(lock);if(result.isNotEmpty())report.setText(result,juce::dontSendNotification);}load.setEnabled(!busy.load());apply.setEnabled(valid.load() && p.inputRms.load()>-70);}
+void ReferenceMasterEditor::resized(){title.setBounds(24,15,870,40);meters.setBounds(24,60,870,30);load.setBounds(24,105,150,34);apply.setBounds(190,105,150,34);save.setBounds(590,105,140,34);restore.setBounds(745,105,150,34);undo.setBounds(355,105,100,34);redo.setBounds(465,105,100,34);report.setBounds(24,150,870,100);tabs.setBounds(24,260,getWidth()-48,getHeight()-280);}
+void ReferenceMasterEditor::timerCallback(){undo.setEnabled(p.canUndo());redo.setEnabled(p.canRedo());meters.setText("Input RMS "+juce::String(p.inputRms.load(),1)+" dBFS | Sample peak "+juce::String(p.inputPeak.load(),1)+" dBFS | Side energy "+juce::String(p.inputSide.load()*100,1)+"%",juce::dontSendNotification);{const juce::ScopedLock guard(lock);if(result.isNotEmpty())report.setText(result,juce::dontSendNotification);}load.setEnabled(!busy.load());apply.setEnabled(valid.load() && p.inputRms.load()>-70);}
 void ReferenceMasterEditor::chooseReference()
 {
     juce::AudioFormatManager availableFormats;
@@ -52,5 +67,10 @@ void ReferenceMasterEditor::chooseReference()
 void ReferenceMasterEditor::preset(bool saving)
 {
     chooser=std::make_unique<juce::FileChooser>(saving?"Save preset":"Load preset",juce::File{},"*.rmpreset");
-    chooser->launchAsync((saving?juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::warnAboutOverwriting:juce::FileBrowserComponent::openMode)|juce::FileBrowserComponent::canSelectFiles,[this,saving](const juce::FileChooser& fc){auto f=fc.getResult();if(f==juce::File{})return;bool ok=false;if(saving){auto xml=p.state.copyState().createXml();ok=xml->writeTo(f.withFileExtension("rmpreset"));}else if(auto xml=juce::XmlDocument::parse(f))if(xml->hasTagName("ReferenceMaster")){p.state.replaceState(juce::ValueTree::fromXml(*xml));ok=true;}const juce::ScopedLock guard(lock);result=ok?"Preset operation completed.":"Preset operation failed.";});
+    chooser->launchAsync((saving?juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::warnAboutOverwriting:juce::FileBrowserComponent::openMode)|juce::FileBrowserComponent::canSelectFiles,[this,saving](const juce::FileChooser& fc){auto f=fc.getResult();if(f==juce::File{})return;bool ok=false;if(saving){auto xml=p.state.copyState().createXml();ok=xml->writeTo(f.withFileExtension("rmpreset"));}else if(auto xml=juce::XmlDocument::parse(f))if(xml->hasTagName("ReferenceMaster")){p.recordEdit();auto tree=juce::ValueTree::fromXml(*xml);
+for(auto* parameter:p.getParameters()) if(auto* ranged=dynamic_cast<juce::RangedAudioParameter*>(parameter)) {
+    auto item=tree.getChildWithProperty("id",ranged->paramID);
+    if(item.isValid() && item.hasProperty("value")) {parameter->beginChangeGesture();parameter->setValueNotifyingHost(ranged->convertTo0to1(float(item.getProperty("value"))));parameter->endChangeGesture();}
+}
+p.recordEdit();ok=true;}const juce::ScopedLock guard(lock);result=ok?"Preset operation completed.":"Preset operation failed.";});
 }

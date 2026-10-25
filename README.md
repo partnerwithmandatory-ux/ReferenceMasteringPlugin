@@ -8,6 +8,8 @@ Not yet implemented: AI source separation, vocal/drum/instrument balance estimat
 
 ## Build
 
+Undo and Redo track plugin-control edits, Apply level and preset loads. One slider drag is one edit. History has no fixed entry limit and grows with available memory. It survives closing/reopening the plugin window while the same processor instance remains alive, but is not saved in presets or DAW sessions. A new edit after Undo discards the redo branch. Reference-file selection and host automation are not tracked as individual undoable operations; host automation can override restored values.
+
 Requires Git, CMake 3.22+ and a C++17 compiler. CMake fetches JUCE 8.0.6. Review JUCE licensing before distribution.
 
 Ubuntu prerequisites:
@@ -24,6 +26,8 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel 2
 c++ -std=c++17 tests/analysis_test.cpp -o build/analysis_test
 ./build/analysis_test
+c++ -std=c++17 tests/history_test.cpp -o build/history_test
+./build/history_test
 ```
 
 For macOS use Xcode command line tools and CMake. For Windows use Visual Studio 2022 Desktop development with C++, CMake and Git (x64). Build natively for each platform. Outputs appear under `build/ReferenceMaster_artefacts`. Copy the VST3 bundle to your platform's VST3 directory and rescan your DAW. Logic requires a future AU target; Pro Tools requires AAX. Universal DAW compatibility is not established.

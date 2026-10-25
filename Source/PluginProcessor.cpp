@@ -15,7 +15,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout parameters()
     return p;
 }
 ReferenceMasterProcessor::ReferenceMasterProcessor()
-    : AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true).withOutput("Output",juce::AudioChannelSet::stereo(),true)), state(*this,nullptr,"ReferenceMaster",parameters()) {}
+    : AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true).withOutput("Output",juce::AudioChannelSet::stereo(),true)), state(*this,nullptr,"ReferenceMaster",parameters()) { recordEdit(); }
 bool ReferenceMasterProcessor::isBusesLayoutSupported(const BusesLayout& b) const
 { return b.getMainInputChannelSet()==juce::AudioChannelSet::stereo() && b.getMainOutputChannelSet()==juce::AudioChannelSet::stereo(); }
 void ReferenceMasterProcessor::prepareToPlay(double sr,int block)
@@ -51,6 +51,23 @@ void ReferenceMasterProcessor::processBlock(juce::AudioBuffer<float>& b,juce::Mi
     limiter.setThreshold(value("ceiling")); limiter.setRelease(100); limiter.process(ctx);
 }
 void ReferenceMasterProcessor::getStateInformation(juce::MemoryBlock& data) { auto xml=state.copyState().createXml(); copyXmlToBinary(*xml,data); }
-void ReferenceMasterProcessor::setStateInformation(const void* data,int size) { if(auto xml=getXmlFromBinary(data,size)) if(xml->hasTagName("ReferenceMaster")) state.replaceState(juce::ValueTree::fromXml(*xml)); }
+void ReferenceMasterProcessor::setStateInformation(const void* data,int size) { if(auto xml=getXmlFromBinary(data,size)) if(xml->hasTagName("ReferenceMaster")) { state.replaceState(juce::ValueTree::fromXml(*xml)); resetHistory.store(true); } }
+void ReferenceMasterProcessor::recordEdit()
+{
+    if(resetHistory.exchange(false)) edits.clear();
+    std::vector<float> values;
+    for(auto* parameter : getParameters()) values.push_back(parameter->getValue());
+    edits.record(values);
+}
+void ReferenceMasterProcessor::restoreEdit(const std::vector<float>* values)
+{
+    if(values==nullptr || values->size()!=static_cast<size_t>(getParameters().size())) return;
+    size_t i=0;
+    for(auto* parameter : getParameters()) {
+        parameter->beginChangeGesture(); parameter->setValueNotifyingHost((*values)[i++]); parameter->endChangeGesture();
+    }
+}
+void ReferenceMasterProcessor::undoEdit() { if(canUndo()) restoreEdit(edits.undo()); }
+void ReferenceMasterProcessor::redoEdit() { if(canRedo()) restoreEdit(edits.redo()); }
 juce::AudioProcessorEditor* ReferenceMasterProcessor::createEditor() { return new ReferenceMasterEditor(*this); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new ReferenceMasterProcessor(); }

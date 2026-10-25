@@ -2,6 +2,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_dsp/juce_dsp.h>
 #include "Analysis.h"
+#include "EditHistory.h"
 
 class ReferenceMasterProcessor : public juce::AudioProcessor
 {
@@ -24,9 +25,18 @@ public:
     void changeProgramName(int, const juce::String&) override {}
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
+    // Called only on the message thread, never from processBlock.
+    void recordEdit();
+    void undoEdit();
+    void redoEdit();
+    bool canUndo() const { return !resetHistory.load() && edits.canUndo(); }
+    bool canRedo() const { return !resetHistory.load() && edits.canRedo(); }
     juce::AudioProcessorValueTreeState state;
     std::atomic<float> inputRms {-120}, inputPeak {-120}, inputSide {0};
 private:
+    EditHistory<std::vector<float>> edits;
+    std::atomic<bool> resetHistory {false};
+    void restoreEdit(const std::vector<float>*);
     juce::dsp::Compressor<float> compressor;
     juce::dsp::Limiter<float> limiter;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> low, high;
