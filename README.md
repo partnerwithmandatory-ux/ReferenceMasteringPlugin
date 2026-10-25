@@ -2,7 +2,7 @@
 
 Early JUCE 8 stereo mastering VST3 and standalone prototype. Not a completed AI mastering product.
 
-Implemented: background WAV/AIFF/FLAC reference analysis (RMS, sample peak, crest factor, stereo correlation and side energy); tabbed width, EQ, compression and maximizer controls; mid/side width; 120 Hz and 8 kHz EQ shelves; compressor threshold/ratio/attack/release; drive and limiting; bounded RMS drive suggestion; user preset files and DAW parameter state.
+Implemented: background WAV/AIFF/FLAC reference analysis, plus MP3 through macOS CoreAudio (RMS, sample peak, crest factor, stereo correlation and side energy); tabbed width, EQ, compression and maximizer controls; mid/side width; 120 Hz and 8 kHz EQ shelves; compressor threshold/ratio/attack/release; drive and limiting; bounded RMS drive suggestion; user preset files and DAW parameter state. The reference picker derives its selectable extensions from the registered platform decoders. MP3 loading still needs confirmation in the macOS host.
 
 Not yet implemented: AI source separation, vocal/drum/instrument balance estimation, perceived-depth processing, unlimited parametric/dynamic EQ, analog compressor models, true-peak lookahead limiting, LUFS metering, spectrum display, factory presets and reference playback. RMS is not LUFS. Apply currently suggests drive only; audition all changes. A stereo reference cannot reveal exact source levels or original mastering settings.
 

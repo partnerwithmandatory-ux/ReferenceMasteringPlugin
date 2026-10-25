@@ -6,7 +6,7 @@ ReferenceMasterEditor::ReferenceMasterEditor(ReferenceMasterProcessor& processor
     title.setFont(juce::Font(24.f));
     juce::Component* controls[]{&title,&meters,&report,&load,&apply,&save,&restore,&tabs};
     for(auto* c:controls) addAndMakeVisible(c);
-    report.setText("Load a WAV, AIFF or FLAC reference. No AI source separation is included yet.",juce::dontSendNotification);
+    report.setText("Load a supported reference audio file (including MP3 on macOS). No AI source separation is included yet.",juce::dontSendNotification);
     juce::StringArray names{"Width & Depth","EQ","Compression","Maximizer"};
     std::vector<std::vector<juce::String>> ids{{"width"},{"low","high"},{"threshold","ratio","attack","release"},{"gain","ceiling"}};
     for(size_t page=0;page<ids.size();++page) {
@@ -32,7 +32,11 @@ void ReferenceMasterEditor::resized(){title.setBounds(24,15,870,40);meters.setBo
 void ReferenceMasterEditor::timerCallback(){meters.setText("Input RMS "+juce::String(p.inputRms.load(),1)+" dBFS | Sample peak "+juce::String(p.inputPeak.load(),1)+" dBFS | Side energy "+juce::String(p.inputSide.load()*100,1)+"%",juce::dontSendNotification);{const juce::ScopedLock guard(lock);if(result.isNotEmpty())report.setText(result,juce::dontSendNotification);}load.setEnabled(!busy.load());apply.setEnabled(valid.load() && p.inputRms.load()>-70);}
 void ReferenceMasterEditor::chooseReference()
 {
-    chooser=std::make_unique<juce::FileChooser>("Reference audio",juce::File{},"*.wav;*.aiff;*.aif;*.flac");
+    juce::AudioFormatManager availableFormats;
+    availableFormats.registerBasicFormats();
+    // Keep selectable extensions in sync with the actual platform decoders.
+    // macOS registers CoreAudio, which supports MP3 without an extra decoder.
+    chooser=std::make_unique<juce::FileChooser>("Reference audio",juce::File{},availableFormats.getWildcardForAllFormats());
     chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[this](const juce::FileChooser& fc){
         auto file=fc.getResult();if(!file.existsAsFile())return;busy.store(true);valid.store(false);
         {const juce::ScopedLock guard(lock);result="Analyzing "+file.getFileName();}
